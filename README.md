@@ -7,7 +7,7 @@
 ### Automatic (Recommended)
 
 Run:
-
+Double click to launcher.py or,
 ```bash
 python launcher.py
 ```
