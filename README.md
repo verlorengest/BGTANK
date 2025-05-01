@@ -9,7 +9,7 @@
 Run:
 
 ```bash
-python main.py
+python launcher.py
 ```
 
 This will:
