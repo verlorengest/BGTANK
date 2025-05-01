@@ -19,24 +19,19 @@ class BackgroundRemoverApp:
         self.root.title("BGTANK - Background Remover")
         self.root.geometry("700x550")
 
-        # Lock window size - prevent resizing
         self.root.resizable(False, False)
 
-        # Set color scheme
         self.bg_color = "#f5f5f5"
         self.accent_color = "#4a6ea9"
         self.text_color = "#333333"
         self.success_color = "#4caf50"
         self.error_color = "#f44336"
 
-        # Configure root
         self.root.configure(bg=self.bg_color)
 
-        # Configure styles
         self.style = ttk.Style()
         self.style.theme_use('clam')
 
-        # Configure button style
         self.style.configure(
             "Accent.TButton",
             background=self.accent_color,
@@ -45,7 +40,6 @@ class BackgroundRemoverApp:
             font=('Segoe UI', 10, 'bold')
         )
 
-        # Configure label style
         self.style.configure(
             "TLabel",
             background=self.bg_color,
@@ -53,7 +47,6 @@ class BackgroundRemoverApp:
             font=('Segoe UI', 10)
         )
 
-        # Configure heading style
         self.style.configure(
             "Heading.TLabel",
             background=self.bg_color,
@@ -61,7 +54,6 @@ class BackgroundRemoverApp:
             font=('Segoe UI', 20, 'bold')
         )
 
-        # Configure status frame
         self.style.configure(
             "TLabelframe",
             background=self.bg_color,
@@ -82,7 +74,6 @@ class BackgroundRemoverApp:
             background=self.accent_color
         )
 
-        # Configure link style
         self.style.configure(
             "Link.TLabel",
             background=self.bg_color,
@@ -90,12 +81,10 @@ class BackgroundRemoverApp:
             font=('Segoe UI', 9, 'underline')
         )
 
-        # Main frame
         main_frame = ttk.Frame(root, padding="20", style="TFrame")
         main_frame.pack(fill=tk.BOTH, expand=True)
         self.style.configure("TFrame", background=self.bg_color)
 
-        # App logo/title
         title_frame = ttk.Frame(main_frame, style="TFrame")
         title_frame.pack(fill=tk.X, pady=(0, 20))
 
@@ -106,7 +95,6 @@ class BackgroundRemoverApp:
                                    font=('Segoe UI', 12))
         subtitle_label.pack(side=tk.LEFT, padx=(10, 0), pady=(8, 0))
 
-        # GitHub link in title frame (more visible location)
         github_frame = ttk.Frame(title_frame, style="TFrame")
         github_frame.pack(side=tk.RIGHT, padx=(10, 0), pady=(8, 0))
 
@@ -311,7 +299,6 @@ class BackgroundRemoverApp:
 
         if has_rembg:
             try:
-                # Try to import and initialize
                 from rembg import remove, new_session
                 self.remove_bg = remove
                 self.session = new_session()
@@ -367,7 +354,6 @@ class BackgroundRemoverApp:
             stdout, stderr = process.communicate()
 
             if process.returncode == 0:
-                # Check if both packages are properly installed
                 try:
                     import onnxruntime
                     import rembg
@@ -699,32 +685,24 @@ class BackgroundRemoverApp:
 
 
 if __name__ == "__main__":
-    # Create the main window
     root = tk.Tk()
     app = BackgroundRemoverApp(root)
 
-    # Set app icon for both window and taskbar in Windows
     try:
-        # Path to your icon file
-        icon_path = "icon.ico"  # Make sure this file exists in the same directory as your script
+        icon_path = "icon.ico"
 
-        # Set window icon
         root.iconbitmap(icon_path)
 
-        # Set taskbar icon (Windows only)
         if sys.platform == 'win32':
-            # This approach uses the Windows API through ctypes
             import ctypes
 
-            myappid = 'verlorengest.bgtank.backgroundremover.1.0'  # Arbitrary string for Windows to identify your app
+            myappid = 'verlorengest.bgtank.backgroundremover.1.0'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-            # Alternative method for taskbar icon if the above doesn't work
             root.wm_iconbitmap(default=icon_path)
     except Exception as e:
-        print(f"Could not load icon: {e}")  # This will handle missing icon gracefully
+        print(f"Could not load icon: {e}")
 
-    # Center window on screen
     root.update_idletasks()
     width = root.winfo_width()
     height = root.winfo_height()
@@ -732,5 +710,4 @@ if __name__ == "__main__":
     y = (root.winfo_screenheight() // 2) - (height // 2)
     root.geometry(f'{width}x{height}+{x}+{y}')
 
-    # Start the main loop
     root.mainloop()

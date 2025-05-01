@@ -3,11 +3,27 @@ import subprocess
 import sys
 import platform
 import time
-import colorama
-from colorama import Fore, Style, Back
 
-# Initialize colorama
-colorama.init(autoreset=True)
+def ensure_colorama():
+    """Check if colorama is installed, and install it if not."""
+    try:
+        import colorama
+        return True
+    except ImportError:
+        print("Colorama not found. Attempting to install...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "colorama"])
+            print("Colorama installed successfully.")
+            return True
+        except subprocess.CalledProcessError:
+            print("Failed to install colorama. Will continue without color formatting.")
+            return False
+
+has_colorama = ensure_colorama()
+if has_colorama:
+    import colorama
+    from colorama import Fore, Style, Back
+    colorama.init(autoreset=True)
 
 
 def print_centered(message, width=80, padding_char="="):
@@ -21,22 +37,28 @@ def print_centered(message, width=80, padding_char="="):
 
 def print_status(message, status_type="INFO", show_time=True):
     """Print formatted status message"""
-    colors = {
-        "INFO": Fore.CYAN,
-        "SUCCESS": Fore.GREEN,
-        "WARNING": Fore.YELLOW,
-        "ERROR": Fore.RED,
-        "STEP": Fore.MAGENTA
-    }
+    if has_colorama:
+        colors = {
+            "INFO": Fore.CYAN,
+            "SUCCESS": Fore.GREEN,
+            "WARNING": Fore.YELLOW,
+            "ERROR": Fore.RED,
+            "STEP": Fore.MAGENTA
+        }
+        timestamp = ""
+        if show_time:
+            timestamp = f"{time.strftime('%H:%M:%S')} "
 
-    timestamp = ""
-    if show_time:
-        timestamp = f"{time.strftime('%H:%M:%S')} "
+        color = colors.get(status_type, Fore.WHITE)
+        status_display = f"[{status_type}]"
 
-    color = colors.get(status_type, Fore.WHITE)
-    status_display = f"[{status_type}]"
-
-    print(f"{color}{timestamp}{status_display}{Style.RESET_ALL} {message}")
+        print(f"{color}{timestamp}{status_display}{Style.RESET_ALL} {message}")
+    else:
+        # Fallback to non-colored output
+        timestamp = ""
+        if show_time:
+            timestamp = f"{time.strftime('%H:%M:%S')} "
+        print(f"{timestamp}[{status_type}] {message}")
 
 
 def run_command(command, silent=False):
@@ -122,18 +144,18 @@ def main():
     print_status(f"Python: {platform.python_version()}")
     print("")
 
-    # Check if requirements.txt exists
+    # check if requirements.txt exists
     if not os.path.exists("requirements.txt"):
         print_status("requirements.txt not found. Continuing without installing dependencies.", "WARNING")
         has_requirements = False
     else:
         has_requirements = True
 
-    # Check for virtual environment
+    # check for virtual environment
     venv_activate = get_venv_activate_path()
     venv_exists = os.path.exists(venv_activate)
 
-    # Try to use venv if exists or create one
+    # try to use venv if exists or create one
     use_venv = True
     if not venv_exists:
         print_status("Virtual environment not found.", "INFO")
@@ -149,10 +171,10 @@ def main():
     else:
         print_status("Virtual environment found.", "SUCCESS")
 
-    # Check internet connection
+    # check internet connection
     online = check_internet()
 
-    # Install requirements if they exist and we have internet
+    # install requirements if they exist and we have internet
     if has_requirements:
         if online:
             print_status("Internet connection detected.", "SUCCESS")
@@ -164,7 +186,7 @@ def main():
             print_status("No internet connection. Skipping dependency installation.", "WARNING")
             print_status("Application may not work properly without required dependencies.", "WARNING")
 
-    # Run the main application
+    # run the main application
     print("")
     exit_code = run_main(use_venv)
 

@@ -7,13 +7,11 @@ import subprocess
 import tempfile
 import shutil
 
-# Repo to pull from if anything's missing
 REPO_URL = "https://github.com/verlorengest/BGTANK.git"
-# Files we want side-by-side with this stub
 FILES = ["launcher.py", "main.py", "requirements.txt", "icon.ico"]
 
 def get_base_dir():
-    # When frozen, __file__ lives in a temp _MEI… folder, so use sys.executable
+
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
@@ -49,10 +47,8 @@ def launch_launcher(base_dir):
 
     try:
         if os.name == "nt":
-            # Let Windows use its .py file‐association
             os.startfile(launcher)
         else:
-            # Fallback for non‐Windows
             subprocess.Popen([sys.executable, launcher], close_fds=True)
     except Exception as e:
         print("Error launching launcher.py:", e)
