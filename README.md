@@ -6,8 +6,8 @@
 
 ### Automatic (Recommended)
 
-Run:
 Download [Setup](https://github.com/verlorengest/BGTANK/releases/download/BGTANK1.0/BGTANK.Setup.exe) and launch.
+
 OR,
 Clone the repo,
 ```bash
