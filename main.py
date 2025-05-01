@@ -703,12 +703,26 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = BackgroundRemoverApp(root)
 
-    # Set app icon (if available)
+    # Set app icon for both window and taskbar in Windows
     try:
-        # You could add an icon here if available
-        pass
-    except:
-        pass
+        # Path to your icon file
+        icon_path = "icon.ico"  # Make sure this file exists in the same directory as your script
+
+        # Set window icon
+        root.iconbitmap(icon_path)
+
+        # Set taskbar icon (Windows only)
+        if sys.platform == 'win32':
+            # This approach uses the Windows API through ctypes
+            import ctypes
+
+            myappid = 'verlorengest.bgtank.backgroundremover.1.0'  # Arbitrary string for Windows to identify your app
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
+            # Alternative method for taskbar icon if the above doesn't work
+            root.wm_iconbitmap(default=icon_path)
+    except Exception as e:
+        print(f"Could not load icon: {e}")  # This will handle missing icon gracefully
 
     # Center window on screen
     root.update_idletasks()
