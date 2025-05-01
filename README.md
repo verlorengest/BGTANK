@@ -7,7 +7,9 @@
 ### Automatic (Recommended)
 
 Run:
-Double click to launcher.py or,
+Download [Setup](https://github.com/verlorengest/BGTANK/releases/download/BGTANK1.0/BGTANK.Setup.exe) and launch.
+OR,
+Clone the repo,
 ```bash
 python launcher.py
 ```
