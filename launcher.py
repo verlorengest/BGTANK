@@ -56,6 +56,33 @@ def check_internet():
         return False
 
 
+def run_fix_bat():
+    """Run the fix.bat file to recover from errors"""
+    print_status("Attempting to run fix.bat for recovery...", "STEP")
+
+    if platform.system() == "Windows":
+        if os.path.exists("fix.bat"):
+            print_status("Starting fix.bat...", "INFO")
+            try:
+                subprocess.Popen(["fix.bat"], shell=True)
+                return True
+            except Exception as e:
+                print_status(f"Error running fix.bat: {str(e)}", "ERROR")
+                return False
+        else:
+            print_status("fix.bat not found", "ERROR")
+            return False
+    else:
+        # On non-Windows, try to restart this script directly
+        print_status("Attempting direct restart (non-Windows system)...", "INFO")
+        try:
+            subprocess.Popen([sys.executable, __file__], close_fds=True)
+            return True
+        except Exception as e:
+            print_status(f"Error restarting: {str(e)}", "ERROR")
+            return False
+
+
 def create_venv():
     """Create a virtual environment"""
     print_status("Creating virtual environment...", "STEP")
@@ -63,11 +90,13 @@ def create_venv():
         # Create .venv directory
         if run_command(f"{sys.executable} -m venv .venv", silent=True) != 0:
             print_status("Failed to create virtual environment.", "ERROR")
+            run_fix_bat()
             return False
         print_status("Virtual environment created successfully.", "SUCCESS")
         return True
     except Exception as e:
         print_status(f"Exception creating virtual environment: {str(e)}", "ERROR")
+        run_fix_bat()
         return False
 
 
@@ -93,7 +122,11 @@ def install_requirements(use_venv=True):
 
     if run_command(cmd) != 0:
         print_status("Failed to install requirements.", "ERROR")
-        return False
+        if use_venv:
+            return False
+        else:
+            run_fix_bat()
+            return False
 
     print_status("Requirements installed successfully.", "SUCCESS")
     return True
@@ -112,69 +145,80 @@ def run_main(use_venv=True):
     else:
         cmd = f"{sys.executable} main.py"
 
-    return run_command(cmd)
+    exit_code = run_command(cmd)
+    if exit_code != 0:
+        print_status(f"Application exited with error code: {exit_code}", "ERROR")
+        run_fix_bat()
+
+    return exit_code
 
 
 def main():
-    os.system('cls' if platform.system() == 'Windows' else 'clear')
-    print_centered("BGTANK LAUNCHER", width=60)
-    print_status(f"System: {platform.system()} {platform.release()}")
-    print_status(f"Python: {platform.python_version()}")
-    print("")
+    try:
+        os.system('cls' if platform.system() == 'Windows' else 'clear')
+        print_centered("BGTANK LAUNCHER", width=60)
+        print_status(f"System: {platform.system()} {platform.release()}")
+        print_status(f"Python: {platform.python_version()}")
+        print("")
 
-    # Check if requirements.txt exists
-    if not os.path.exists("requirements.txt"):
-        print_status("requirements.txt not found. Continuing without installing dependencies.", "WARNING")
-        has_requirements = False
-    else:
-        has_requirements = True
-
-    # Check for virtual environment
-    venv_activate = get_venv_activate_path()
-    venv_exists = os.path.exists(venv_activate)
-
-    # Try to use venv if exists or create one
-    use_venv = True
-    if not venv_exists:
-        print_status("Virtual environment not found.", "INFO")
-        try:
-            if create_venv():
-                print_status("Will use the newly created virtual environment.", "INFO")
-            else:
-                print_status("Could not create virtual environment. Will attempt to run directly.", "WARNING")
-                use_venv = False
-        except Exception as e:
-            print_status(f"Exception when creating venv: {str(e)}. Will attempt to run directly.", "WARNING")
-            use_venv = False
-    else:
-        print_status("Virtual environment found.", "SUCCESS")
-
-    # Check internet connection
-    online = check_internet()
-
-    # Install requirements if they exist and we have internet
-    if has_requirements:
-        if online:
-            print_status("Internet connection detected.", "SUCCESS")
-            if not install_requirements(use_venv):
-                print_status("Failed to install with venv. Trying system Python...", "WARNING")
-                if not install_requirements(use_venv=False):
-                    print_status("Could not install requirements. Attempting to run anyway.", "WARNING")
+        # Check if requirements.txt exists
+        if not os.path.exists("requirements.txt"):
+            print_status("requirements.txt not found. Continuing without installing dependencies.", "WARNING")
+            has_requirements = False
         else:
-            print_status("No internet connection. Skipping dependency installation.", "WARNING")
-            print_status("Application may not work properly without required dependencies.", "WARNING")
+            has_requirements = True
 
-    # Run the main application
-    print("")
-    exit_code = run_main(use_venv)
+        # Check for virtual environment
+        venv_activate = get_venv_activate_path()
+        venv_exists = os.path.exists(venv_activate)
 
-    if exit_code == 0:
-        print_status("Application exited normally.", "SUCCESS")
-    else:
-        print_status(f"Application exited with code: {exit_code}", "ERROR")
+        # Try to use venv if exists or create one
+        use_venv = True
+        if not venv_exists:
+            print_status("Virtual environment not found.", "INFO")
+            try:
+                if create_venv():
+                    print_status("Will use the newly created virtual environment.", "INFO")
+                else:
+                    print_status("Could not create virtual environment. Will attempt to run directly.", "WARNING")
+                    use_venv = False
+            except Exception as e:
+                print_status(f"Exception when creating venv: {str(e)}. Will attempt to run directly.", "WARNING")
+                use_venv = False
+        else:
+            print_status("Virtual environment found.", "SUCCESS")
 
-    print_centered("FINISHED", width=60)
-    sys.exit(exit_code)
+        # Check internet connection
+        online = check_internet()
+
+        # Install requirements if they exist and we have internet
+        if has_requirements:
+            if online:
+                print_status("Internet connection detected.", "SUCCESS")
+                if not install_requirements(use_venv):
+                    print_status("Failed to install with venv. Trying system Python...", "WARNING")
+                    if not install_requirements(use_venv=False):
+                        print_status("Could not install requirements. Attempting to run anyway.", "WARNING")
+            else:
+                print_status("No internet connection. Skipping dependency installation.", "WARNING")
+                print_status("Application may not work properly without required dependencies.", "WARNING")
+
+        # Run the main application
+        print("")
+        exit_code = run_main(use_venv)
+
+        if exit_code == 0:
+            print_status("Application exited normally.", "SUCCESS")
+        else:
+            print_status(f"Application exited with code: {exit_code}", "ERROR")
+
+        print_centered("FINISHED", width=60)
+        sys.exit(exit_code)
+
+    except Exception as e:
+        print_status(f"Unhandled exception in launcher: {str(e)}", "ERROR")
+        run_fix_bat()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
