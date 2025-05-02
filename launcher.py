@@ -1,8 +1,18 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import os
-import subprocess
 import sys
+import subprocess
 import platform
 import time
+import tempfile
+import shutil
+
+# Original BGTANK constants
+REPO_URL = "https://github.com/verlorengest/BGTANK.git"
+FILES = ["launcher.py", "main.py", "requirements.txt", "icon.ico"]
+
 
 def ensure_colorama():
     """Check if colorama is installed, and install it if not."""
@@ -19,10 +29,13 @@ def ensure_colorama():
             print("Failed to install colorama. Will continue without color formatting.")
             return False
 
+
+# Initialize colorama if available
 has_colorama = ensure_colorama()
 if has_colorama:
     import colorama
-    from colorama import Fore, Style, Back
+    from colorama import Fore, Style
+
     colorama.init(autoreset=True)
 
 
@@ -76,6 +89,39 @@ def check_internet():
         return True
     except subprocess.CalledProcessError:
         return False
+
+
+def get_base_dir():
+    """Get the base directory of the application"""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def clone_and_copy(base_dir):
+    """Clone the BGTANK repository and copy required files"""
+    temp_dir = tempfile.mkdtemp(prefix="bgtank_clone_")
+    try:
+        print_status("Cloning BGTANK repository...", "STEP")
+        subprocess.check_call(["git", "clone", REPO_URL, temp_dir], stdout=subprocess.DEVNULL)
+        for fname in FILES:
+            src = os.path.join(temp_dir, fname)
+            dst = os.path.join(base_dir, fname)
+            if os.path.exists(src):
+                shutil.copy2(src, dst)
+        print_status("Files synced successfully", "SUCCESS")
+    except Exception as e:
+        print_status(f"Error during clone or copy: {e}", "ERROR")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def ensure_files(base_dir):
+    """Ensure all required files are present"""
+    missing = [f for f in FILES if not os.path.exists(os.path.join(base_dir, f))]
+    if missing:
+        print_status(f"Missing files: {', '.join(missing)}", "WARNING")
+        clone_and_copy(base_dir)
 
 
 def create_venv():
@@ -138,24 +184,33 @@ def run_main(use_venv=True):
 
 
 def main():
+    """Main function combining functionality from both original scripts"""
+    # Change to the base directory to ensure relative paths work correctly
+    base_dir = get_base_dir()
+    os.chdir(base_dir)
+
+    # Ensure all required files are present
+    ensure_files(base_dir)
+
+    # Clear screen and show launcher info
     os.system('cls' if platform.system() == 'Windows' else 'clear')
     print_centered("BGTANK LAUNCHER", width=60)
     print_status(f"System: {platform.system()} {platform.release()}")
     print_status(f"Python: {platform.python_version()}")
     print("")
 
-    # check if requirements.txt exists
+    # Check if requirements.txt exists
     if not os.path.exists("requirements.txt"):
         print_status("requirements.txt not found. Continuing without installing dependencies.", "WARNING")
         has_requirements = False
     else:
         has_requirements = True
 
-    # check for virtual environment
+    # Check for virtual environment
     venv_activate = get_venv_activate_path()
     venv_exists = os.path.exists(venv_activate)
 
-    # try to use venv if exists or create one
+    # Try to use venv if exists or create one
     use_venv = True
     if not venv_exists:
         print_status("Virtual environment not found.", "INFO")
@@ -171,10 +226,10 @@ def main():
     else:
         print_status("Virtual environment found.", "SUCCESS")
 
-    # check internet connection
+    # Check internet connection
     online = check_internet()
 
-    # install requirements if they exist and we have internet
+    # Install requirements if they exist and we have internet
     if has_requirements:
         if online:
             print_status("Internet connection detected.", "SUCCESS")
@@ -186,7 +241,7 @@ def main():
             print_status("No internet connection. Skipping dependency installation.", "WARNING")
             print_status("Application may not work properly without required dependencies.", "WARNING")
 
-    # run the main application
+    # Run the main application
     print("")
     exit_code = run_main(use_venv)
 

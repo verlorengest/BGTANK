@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import os
 import sys
 import tkinter as tk
@@ -11,27 +9,35 @@ import subprocess
 import importlib.util
 from datetime import datetime
 import webbrowser
+import torch
+import numpy as np
+from rembg.bg import download_models
 
 
 class BackgroundRemoverApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("BGTANK - Background Remover")
-        self.root.geometry("700x550")
+        self.root.title("BGTANK - Background Remover (BiRefNet)")
+        self.root.geometry("700x750")
 
+        # Lock window size - prevent resizing
         self.root.resizable(False, False)
 
+        # Set color scheme
         self.bg_color = "#f5f5f5"
         self.accent_color = "#4a6ea9"
         self.text_color = "#333333"
         self.success_color = "#4caf50"
         self.error_color = "#f44336"
 
+        # Configure root
         self.root.configure(bg=self.bg_color)
 
+        # Configure styles
         self.style = ttk.Style()
         self.style.theme_use('clam')
 
+        # Configure button style
         self.style.configure(
             "Accent.TButton",
             background=self.accent_color,
@@ -40,6 +46,7 @@ class BackgroundRemoverApp:
             font=('Segoe UI', 10, 'bold')
         )
 
+        # Configure label style
         self.style.configure(
             "TLabel",
             background=self.bg_color,
@@ -47,6 +54,7 @@ class BackgroundRemoverApp:
             font=('Segoe UI', 10)
         )
 
+        # Configure heading style
         self.style.configure(
             "Heading.TLabel",
             background=self.bg_color,
@@ -54,6 +62,7 @@ class BackgroundRemoverApp:
             font=('Segoe UI', 20, 'bold')
         )
 
+        # Configure status frame
         self.style.configure(
             "TLabelframe",
             background=self.bg_color,
@@ -74,6 +83,7 @@ class BackgroundRemoverApp:
             background=self.accent_color
         )
 
+        # Configure link style
         self.style.configure(
             "Link.TLabel",
             background=self.bg_color,
@@ -81,20 +91,23 @@ class BackgroundRemoverApp:
             font=('Segoe UI', 9, 'underline')
         )
 
+        # Main frame
         main_frame = ttk.Frame(root, padding="20", style="TFrame")
         main_frame.pack(fill=tk.BOTH, expand=True)
         self.style.configure("TFrame", background=self.bg_color)
 
+        # App logo/title
         title_frame = ttk.Frame(main_frame, style="TFrame")
         title_frame.pack(fill=tk.X, pady=(0, 20))
 
         title_label = ttk.Label(title_frame, text="BGTANK", style="Heading.TLabel")
         title_label.pack(side=tk.LEFT)
 
-        subtitle_label = ttk.Label(title_frame, text="Background Remover Tool",
+        subtitle_label = ttk.Label(title_frame, text="Background Remover Tool (BiRefNet)",
                                    font=('Segoe UI', 12))
         subtitle_label.pack(side=tk.LEFT, padx=(10, 0), pady=(8, 0))
 
+        # GitHub link in title frame (more visible location)
         github_frame = ttk.Frame(title_frame, style="TFrame")
         github_frame.pack(side=tk.RIGHT, padx=(10, 0), pady=(8, 0))
 
@@ -122,7 +135,7 @@ class BackgroundRemoverApp:
         # Instructions
         instructions = ttk.Label(
             info_frame,
-            text="Bulk background removal tool. Select images and process them to create transparent backgrounds.",
+            text="Bulk background removal tool using BiRefNet model. Select images and process them to create transparent backgrounds.",
             wraplength=600
         )
         instructions.pack(side=tk.LEFT, pady=(0, 0))
@@ -164,6 +177,40 @@ class BackgroundRemoverApp:
 
         suffix_example = ttk.Label(suffix_frame, text="Example: image.jpg → image_no_bg.png", font=('Segoe UI', 8))
         suffix_example.pack(side=tk.LEFT, padx=(5, 0))
+
+        model_frame = ttk.Frame(settings_frame, style="TFrame")
+        model_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        model_label = ttk.Label(model_frame, text="Background Removal Model:")
+        model_label.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.model_var = tk.StringVar(value="birefnet")
+
+        # Create radio buttons for model selection
+        self.rb_birefnet = ttk.Radiobutton(
+            model_frame,
+            text="BiRefNet (High accuracy, slower)",
+            variable=self.model_var,
+            value="birefnet"
+        )
+        self.rb_birefnet.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.rb_u2net = ttk.Radiobutton(
+            model_frame,
+            text="U2Net (Faster, lower accuracy)",
+            variable=self.model_var,
+            value="u2net"
+        )
+        self.rb_u2net.pack(side=tk.LEFT)
+
+        # Add tooltip or helper text
+        model_tooltip = ttk.Label(
+            settings_frame,
+            text="• BiRefNet: High-quality results with better edge detection but slower processing.\n• U2Net: Faster processing with good results for simple backgrounds.",
+            font=('Segoe UI', 8),
+            foreground="#666666"
+        )
+        model_tooltip.pack(fill=tk.X, padx=15, pady=(0, 10))
 
         # Save settings button
         self.btn_save_settings = ttk.Button(
@@ -238,11 +285,11 @@ class BackgroundRemoverApp:
         )
         self.btn_open_output.pack(side=tk.RIGHT, padx=(0, 10))
 
-        # Install rembg button (initially hidden)
+        # Install dependencies button (initially hidden)
         self.btn_install = ttk.Button(
             button_frame,
-            text="Install rembg",
-            command=self.install_rembg,
+            text="Install Dependencies",
+            command=self.install_dependencies,
             style="Accent.TButton"
         )
         self.btn_install.pack(side=tk.RIGHT, padx=(0, 10))
@@ -286,87 +333,197 @@ class BackgroundRemoverApp:
         self.suffix = "_no_bg"  # Default suffix
         self.queue = queue.Queue()
         self.is_processing = False
+        self.model_name = "birefnet"  # Default model
         self.session = None
         self.start_time = None
         self.processed_count = 0
 
-        # Check if rembg is installed and initialize
-        self.check_rembg()
+        # Check required dependencies and initialize
+        self.check_dependencies()
 
-    def check_rembg(self):
-        """Check if rembg is installed and available"""
-        has_rembg = importlib.util.find_spec("rembg") is not None
+    def check_dependencies(self):
+        """Check if required dependencies are installed and available"""
+        dependencies_ok = True
+        missing_deps = []
 
-        if has_rembg:
+        # Check for rembg
+        if importlib.util.find_spec("rembg") is None:
+            dependencies_ok = False
+            missing_deps.append("rembg")
+
+        # Check for torch
+        if importlib.util.find_spec("torch") is None:
+            dependencies_ok = False
+            missing_deps.append("torch")
+
+        # Check for numpy
+        if importlib.util.find_spec("numpy") is None:
+            dependencies_ok = False
+            missing_deps.append("numpy")
+
+        if dependencies_ok:
             try:
-                from rembg import remove, new_session
-                self.remove_bg = remove
-                self.session = new_session()
-                self.update_status("System ready. Please select images to process.")
+                # Initialize model
+                self.init_model()
+                self.update_status("System ready. Models loaded successfully.", is_success=True)
                 self.btn_select.config(state=tk.NORMAL)
                 self.btn_install.pack_forget()  # Hide install button
             except Exception as e:
-                self.update_status(f"rembg package is installed but encountered an issue: {str(e)}", is_error=True)
+                self.update_status(f"Error initializing models: {str(e)}", is_error=True)
                 self.show_install_button()
         else:
-            self.update_status("'rembg' package not found! Installation required.", is_error=True)
+            missing_str = ", ".join(missing_deps)
+            self.update_status(f"Missing dependencies: {missing_str}. Installation required.", is_error=True)
             self.show_install_button()
+
+    def remove_bg_with_model(self, input_data, session=None):
+        """Remove background using the selected model"""
+        try:
+            # Use the default rembg remove function with the selected model session
+            from rembg import remove
+            return remove(
+                input_data,
+                session=self.session,
+                only_mask=False,
+                alpha_matting=True if self.model_name == "birefnet" else False
+            )
+        except Exception as e:
+            self.update_status(f"Error in model processing: {str(e)}", is_error=True)
+            raise e
+
+
+    def init_model(self):
+        """Initialize the selected background removal model"""
+        try:
+            # Import necessary modules from rembg
+            from rembg.session_factory import new_session
+
+            # Handle the download_models with correct parameters
+            try:
+                from rembg.bg import download_models, MODELS
+                # Pass the required models parameter
+                download_models(MODELS)
+            except (ImportError, TypeError):
+                # Alternative approach if the above fails
+                try:
+                    # Try alternative import path
+                    from rembg import download_models
+                    # Try with all available models including BiRefNet and U2Net
+                    download_models([
+                        "u2net", "u2net_human_seg", "u2netp", "silueta",
+                        "isnet", "isnet-general-use", "sam", "birefnet_resnet50"
+                    ])
+                except Exception:
+                    # Skip download if it's not working - the model may already be downloaded
+                    self.update_status("Skipping model download - using existing models if available", is_success=True)
+
+            # Get the selected model name
+            self.model_name = self.model_var.get()
+
+            # Create a session with the selected model
+            self.session = new_session(self.model_name)
+
+            # Define remove_bg function that uses the selected model
+            self.remove_bg = self.remove_bg_with_model
+
+            self.update_status(f"Model '{self.model_name}' initialized successfully", is_success=True)
+        except Exception as e:
+            self.update_status(f"Failed to initialize model: {str(e)}", is_error=True)
+            raise e
+
+
+    def init_birefnet_model(self):
+        """Initialize the BiRefNet model"""
+        try:
+            # Import necessary modules from rembg
+            from rembg.session_factory import new_session
+
+            # Handle the download_models with correct parameters
+            try:
+                from rembg.bg import download_models, MODELS
+                # Pass the required models parameter
+                download_models(MODELS)
+            except (ImportError, TypeError):
+                # Alternative approach if the above fails
+                try:
+                    # Try alternative import path
+                    from rembg import download_models
+                    # Try with u2net_human_seg which is usually required for BiRefNet
+                    download_models(
+                        ["u2net", "u2net_human_seg", "u2netp", "silueta", "isnet", "isnet-general-use", "sam",
+                         "birefnet_resnet50"])
+                except Exception:
+                    # Skip download if it's not working - the model may already be downloaded
+                    self.update_status("Skipping model download - using existing models if available", is_success=True)
+
+            # Create a session with BiRefNet model
+            self.session = new_session("birefnet")
+
+            # Define remove_bg function that uses the BiRefNet model
+            self.remove_bg = self.remove_bg_with_birefnet
+
+            self.update_status("BiRefNet model initialized successfully", is_success=True)
+        except Exception as e:
+            self.update_status(f"Failed to initialize BiRefNet model: {str(e)}", is_error=True)
+            raise e
+
+    def remove_bg_with_birefnet(self, input_data, session=None):
+        """Remove background using BiRefNet model"""
+        try:
+            # Use the default rembg remove function but ensure BiRefNet model is used
+            from rembg import remove
+            return remove(input_data, session=self.session, only_mask=False, alpha_matting=True)
+        except Exception as e:
+            self.update_status(f"Error in BiRefNet processing: {str(e)}", is_error=True)
+            raise e
 
     def show_install_button(self):
         """Show the install button and disable select button"""
         self.btn_select.config(state=tk.DISABLED)
         self.btn_install.pack(side=tk.RIGHT, padx=(0, 10))
 
-    def install_rembg(self):
-        """Install rembg package and dependencies"""
-        self.update_status("Installing rembg package and dependencies... This may take a few minutes.")
+    def install_dependencies(self):
+        """Install required packages and dependencies"""
+        self.update_status("Installing required dependencies... This may take a few minutes.")
         self.btn_install.config(state=tk.DISABLED, text="Installing...")
 
         # Start installation in a separate thread
-        threading.Thread(target=self._install_rembg_thread, daemon=True).start()
+        threading.Thread(target=self._install_dependencies_thread, daemon=True).start()
 
-    def _install_rembg_thread(self):
-        """Thread for installing rembg and dependencies"""
+    def _install_dependencies_thread(self):
+        """Thread for installing dependencies"""
         try:
             # Get the Python executable path
             python_exe = sys.executable
 
-            # First, try to install onnxruntime
-            self.queue.put(("status", "Installing onnxruntime dependency..."))
-            process = subprocess.Popen(
-                [python_exe, '-m', 'pip', 'install', 'onnxruntime'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
-            )
+            # Install dependencies
+            dependencies = ["torch", "numpy", "rembg", "onnxruntime"]
 
-            stdout, stderr = process.communicate()
+            for dep in dependencies:
+                self.queue.put(("status", f"Installing {dep}..."))
+                process = subprocess.Popen(
+                    [python_exe, '-m', 'pip', 'install', dep],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+                stdout, stderr = process.communicate()
 
-            # Then install rembg (even if onnxruntime had issues)
-            self.queue.put(("status", "Installing rembg package..."))
-            process = subprocess.Popen(
-                [python_exe, '-m', 'pip', 'install', 'rembg'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
-            )
+                if process.returncode != 0:
+                    self.queue.put(("error", f"Failed to install {dep}: {stderr}"))
 
-            stdout, stderr = process.communicate()
-
-            if process.returncode == 0:
+            # Check if dependencies are installed
+            missing_deps = []
+            for dep in dependencies:
                 try:
-                    import onnxruntime
-                    import rembg
-                    self.queue.put(("install_success", None))
-                except ImportError as e:
-                    # Missing dependency even after installation
-                    missing_module = str(e).split("'")[1] if "'" in str(e) else str(e)
-                    self.queue.put(("install_error", f"Package installed but missing dependency: {missing_module}"))
-                    # Update button text to install the missing dependency
-                    self.queue.put(("update_button", f"Install {missing_module}"))
-            else:
-                self.queue.put(("install_error", stderr))
+                    __import__(dep)
+                except ImportError:
+                    missing_deps.append(dep)
 
+            if missing_deps:
+                self.queue.put(("install_error", f"Failed to install: {', '.join(missing_deps)}"))
+            else:
+                self.queue.put(("install_success", None))
         except Exception as e:
             self.queue.put(("install_error", str(e)))
 
@@ -451,6 +608,18 @@ class BackgroundRemoverApp:
             self.suffix_var.set("_no_bg")
             self.update_status("File suffix reset to default: '_no_bg'")
 
+        # Update model selection
+        new_model = self.model_var.get()
+        if new_model != self.model_name:
+            self.model_name = new_model
+            self.update_status(f"Model changed to {new_model}. Initializing...", is_success=True)
+            try:
+                self.init_model()
+            except Exception as e:
+                self.update_status(f"Error changing model: {str(e)}", is_error=True)
+                # Revert to previous model if failed
+                self.model_var.set(self.model_name)
+
         # Update output directory
         output_dir = self.output_dir_var.get()
         if output_dir and output_dir != self.output_dir:
@@ -510,6 +679,15 @@ class BackgroundRemoverApp:
         # Update the output directory variable with current entry value
         self.output_dir = self.output_dir_var.get()
 
+        # Update model selection if changed
+        if self.model_var.get() != self.model_name:
+            self.model_name = self.model_var.get()
+            try:
+                self.init_model()
+            except Exception as e:
+                self.update_status(f"Error initializing model: {str(e)}", is_error=True)
+                return
+
         # Check if output directory exists and is writable
         if not os.path.exists(self.output_dir):
             try:
@@ -519,9 +697,9 @@ class BackgroundRemoverApp:
                 messagebox.showerror("Error", f"Could not create output directory:\n{str(e)}")
                 return
 
-        # Check if rembg is loaded properly
+        # Check if model is loaded properly
         if not hasattr(self, 'remove_bg') or not self.session:
-            self.update_status("rembg package is not functioning properly. Please try reinstalling.", is_error=True)
+            self.update_status("Model is not functioning properly. Please try reinstalling.", is_error=True)
             self.show_install_button()
             return
 
@@ -540,12 +718,17 @@ class BackgroundRemoverApp:
         self.btn_browse_output.config(state=tk.DISABLED)
         self.suffix_entry.config(state=tk.DISABLED)
         self.output_dir_entry.config(state=tk.DISABLED)
+        self.rb_birefnet.config(state=tk.DISABLED)
+        self.rb_u2net.config(state=tk.DISABLED)
 
         # Record start time
         self.start_time = datetime.now()
 
         # Update status
-        self.update_status(f"Starting background removal for {len(self.file_paths)} images...", is_success=True)
+        model_name_display = "BiRefNet" if self.model_name == "birefnet" else "U2Net"
+        self.update_status(
+            f"Starting background removal with {model_name_display} for {len(self.file_paths)} images...",
+            is_success=True)
         self.update_status(f"Output directory: {self.output_dir}")
 
         # Start processing thread
@@ -585,7 +768,7 @@ class BackgroundRemoverApp:
             for i, input_path in enumerate(self.file_paths):
                 try:
                     # Update status via queue
-                    self.queue.put(("status", f"Processing: {os.path.basename(input_path)}"))
+                    self.queue.put(("status", f"Processing with BiRefNet: {os.path.basename(input_path)}"))
 
                     # Open image and remove background
                     with open(input_path, 'rb') as i_file:
@@ -648,21 +831,21 @@ class BackgroundRemoverApp:
 
                     self.update_status(f"All tasks completed in {time_str}!", is_success=True)
                     result = messagebox.askquestion("Success",
-                                                    f"All processing completed.\nOutput saved to: {self.output_dir}\n\nWould you like to open the output folder?")
+                                                    f"All processing completed with BiRefNet.\nOutput saved to: {self.output_dir}\n\nWould you like to open the output folder?")
                     self.finish_processing()
 
                     if result == "yes":
                         self.open_output_folder()
                 elif message_type == "install_success":
-                    self.update_status("rembg package installed successfully!", is_success=True)
-                    self.btn_install.config(text="Install rembg")
-                    self.check_rembg()  # Re-check rembg
+                    self.update_status("Dependencies installed successfully!", is_success=True)
+                    self.btn_install.config(text="Install Dependencies")
+                    self.check_dependencies()  # Re-check dependencies
                 elif message_type == "install_error":
-                    self.update_status(f"rembg installation failed: {message}", is_error=True)
-                    self.btn_install.config(state=tk.NORMAL, text="Install rembg")
+                    self.update_status(f"Installation failed: {message}", is_error=True)
+                    self.btn_install.config(state=tk.NORMAL, text="Install Dependencies")
                     # Show manual installation instructions
-                    self.update_status("For manual installation, run this command in terminal:", is_error=True)
-                    self.update_status("pip install rembg", is_error=True)
+                    self.update_status("For manual installation, run these commands in terminal:", is_error=True)
+                    self.update_status("pip install torch numpy rembg onnxruntime", is_error=True)
 
                 self.queue.task_done()
 
@@ -679,35 +862,100 @@ class BackgroundRemoverApp:
         self.btn_browse_output.config(state=tk.NORMAL)
         self.suffix_entry.config(state=tk.NORMAL)
         self.output_dir_entry.config(state=tk.NORMAL)
+        self.rb_birefnet.config(state=tk.NORMAL)
+        self.rb_u2net.config(state=tk.NORMAL)
         self.counter_label.config(text="Ready")
         self.time_label.config(text="")
-        self.update_status("Process completed.")
+
+        # Get model name for display
+        model_name_display = "BiRefNet" if self.model_name == "birefnet" else "U2Net"
+        self.update_status(f"Process completed with {model_name_display} model.")
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = BackgroundRemoverApp(root)
+    # Check and install required dependencies before launching the app
+    import sys
+    import subprocess
+    import importlib.util
+    import tkinter as tk
+    from tkinter import messagebox
 
-    try:
-        icon_path = "icon.ico"
 
-        root.iconbitmap(icon_path)
+    def check_and_install_dependencies():
+        required_packages = ["torch", "numpy", "rembg", "onnxruntime", "Pillow"]
+        missing_packages = []
 
-        if sys.platform == 'win32':
-            import ctypes
+        # Check which packages are missing
+        for package in required_packages:
+            if importlib.util.find_spec(package) is None:
+                # Special case for Pillow which is imported as PIL
+                if package == "Pillow" and importlib.util.find_spec("PIL") is not None:
+                    continue
+                missing_packages.append(package)
 
-            myappid = 'verlorengest.bgtank.backgroundremover.1.0'
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        # If packages are missing, install them
+        if missing_packages:
+            print(f"Installing missing dependencies: {', '.join(missing_packages)}")
+            try:
+                # Create a simple splash window to show installation progress
+                splash = tk.Tk()
+                splash.title("Installing Dependencies")
+                splash.geometry("400x150")
+                splash.resizable(False, False)
 
-            root.wm_iconbitmap(default=icon_path)
-    except Exception as e:
-        print(f"Could not load icon: {e}")
+                # Center the window
+                splash.update_idletasks()
+                width = splash.winfo_width()
+                height = splash.winfo_height()
+                x = (splash.winfo_screenwidth() // 2) - (width // 2)
+                y = (splash.winfo_screenheight() // 2) - (height // 2)
+                splash.geometry(f'{width}x{height}+{x}+{y}')
 
-    root.update_idletasks()
-    width = root.winfo_width()
-    height = root.winfo_height()
-    x = (root.winfo_screenwidth() // 2) - (width // 2)
-    y = (root.winfo_screenheight() // 2) - (height // 2)
-    root.geometry(f'{width}x{height}+{x}+{y}')
+                label = tk.Label(splash,
+                                 text=f"Installing required dependencies...\n{', '.join(missing_packages)}\n\nPlease wait, this might take a few minutes.",
+                                 pady=20, padx=20)
+                label.pack()
 
-    root.mainloop()
+                progress = tk.Label(splash, text="")
+                progress.pack()
+
+                splash.update()
+
+                # Install each missing package
+                for i, package in enumerate(missing_packages):
+                    progress.config(text=f"Installing {package}... ({i + 1}/{len(missing_packages)})")
+                    splash.update()
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+                # Close splash window after installation
+                splash.destroy()
+                return True
+
+            except Exception as e:
+                messagebox.showerror("Installation Error",
+                                     f"Failed to install dependencies: {str(e)}\n\n"
+                                     f"Please manually install the following packages:\n"
+                                     f"{', '.join(missing_packages)}\n\n"
+                                     f"Run these commands in your terminal:\n"
+                                     f"pip install {' '.join(missing_packages)}")
+                return False
+
+        return True
+
+
+    # Run dependency check and installation
+    if check_and_install_dependencies():
+        # Create the main window
+        root = tk.Tk()
+        app = BackgroundRemoverApp(root)
+
+        # Center window on screen
+        root.update_idletasks()
+        width = root.winfo_width()
+        height = root.winfo_height()
+        x = (root.winfo_screenwidth() // 2) - (width // 2)
+        y = (root.winfo_screenheight() // 2) - (height // 2)
+        root.geometry(f'{width}x{height}+{x}+{y}')
+
+        # Start the main loop
+        root.mainloop()
