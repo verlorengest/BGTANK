@@ -1,6 +1,7 @@
 # BGTANK
 ### Bulk Background Remover
-![image](https://github.com/user-attachments/assets/abe2756a-7a60-43dc-8dbd-cae6c573b99d)
+![image](https://github.com/user-attachments/assets/828bf099-4a9c-47c7-99f8-f341b4ebc61e)
+
 
 ## Installation
 
