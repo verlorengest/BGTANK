@@ -17,7 +17,7 @@ from rembg.bg import download_models
 class BackgroundRemoverApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("BGTANK - Background Remover (BiRefNet)")
+        self.root.title("BGTANK - Background Remover")
         self.root.geometry("700x750")
 
         # Lock window size - prevent resizing
@@ -103,7 +103,7 @@ class BackgroundRemoverApp:
         title_label = ttk.Label(title_frame, text="BGTANK", style="Heading.TLabel")
         title_label.pack(side=tk.LEFT)
 
-        subtitle_label = ttk.Label(title_frame, text="Background Remover Tool (BiRefNet)",
+        subtitle_label = ttk.Label(title_frame, text="Background Remover Tool",
                                    font=('Segoe UI', 12))
         subtitle_label.pack(side=tk.LEFT, padx=(10, 0), pady=(8, 0))
 
@@ -135,7 +135,7 @@ class BackgroundRemoverApp:
         # Instructions
         instructions = ttk.Label(
             info_frame,
-            text="Bulk background removal tool using BiRefNet model. Select images and process them to create transparent backgrounds.",
+            text="Bulk background removal tool. Select images and process them to create transparent backgrounds.",
             wraplength=600
         )
         instructions.pack(side=tk.LEFT, pady=(0, 0))
