@@ -1,5 +1,6 @@
 import os
 import sys
+import re 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
@@ -13,6 +14,43 @@ import torch
 import numpy as np
 from rembg.bg import download_models
 
+
+class StdErrRedirector:
+    """Redirects console output to queue for progress bar"""
+    def __init__(self, queue):
+        self.queue = queue
+        self.buffer = ""
+        
+    def write(self, text):
+        # Add to buffer
+        self.buffer += text
+        
+        # Only process if we find a percentage symbol or newline
+        if '%' in self.buffer or '\r' in self.buffer:
+            # Look for number followed by % (e.g., "15%" or "100%")
+            # This regex finds the LAST percentage in the text chunk
+            matches = re.findall(r'(\d+)%', self.buffer)
+            
+            if matches:
+                try:
+                    # Get the last reported percentage
+                    percent = int(matches[-1])
+                    
+                    # Try to find time remaining (e.g., "00:05<00:00")
+                    # Looks for format: digits:digits<
+                    time_match = re.search(r'(\d+:\d+)<', self.buffer)
+                    time_left = time_match.group(1) if time_match else "Calculating..."
+                    
+                    self.queue.put(("download_progress", (percent, time_left)))
+                except ValueError:
+                    pass
+            
+            # Keep buffer reasonable size if it gets too long without clearing
+            if len(self.buffer) > 200:
+                self.buffer = self.buffer[-50:]
+
+    def flush(self):
+        pass
 
 class BackgroundRemoverApp:
     def __init__(self, root):
@@ -184,14 +222,14 @@ class BackgroundRemoverApp:
         model_label = ttk.Label(model_frame, text="Background Removal Model:")
         model_label.pack(side=tk.LEFT, padx=(0, 5))
 
-        self.model_var = tk.StringVar(value="birefnet")
+        self.model_var = tk.StringVar(value="birefnet-general")
 
         # Create radio buttons for model selection
         self.rb_birefnet = ttk.Radiobutton(
             model_frame,
             text="BiRefNet (High accuracy, slower)",
             variable=self.model_var,
-            value="birefnet"
+            value="birefnet-general"
         )
         self.rb_birefnet.pack(side=tk.LEFT, padx=(0, 10))
 
@@ -333,13 +371,53 @@ class BackgroundRemoverApp:
         self.suffix = "_no_bg"  # Default suffix
         self.queue = queue.Queue()
         self.is_processing = False
-        self.model_name = "birefnet"  # Default model
+        self.model_name = "birefnet-general"  # Default model
+
         self.session = None
         self.start_time = None
         self.processed_count = 0
 
         # Check required dependencies and initialize
         self.check_dependencies()
+
+
+
+    def show_loading_dialog(self, title, message):
+        """Show a modal loading dialog with progress tracking"""
+        self.loading_window = tk.Toplevel(self.root)
+        self.loading_window.title(title)
+        self.loading_window.geometry("450x180") # Slightly taller/wider
+        self.loading_window.resizable(False, False)
+        self.loading_window.transient(self.root)
+        self.loading_window.grab_set()
+        
+        # Center the window
+        self.root.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (450 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (180 // 2)
+        self.loading_window.geometry(f"+{x}+{y}")
+        
+        # Main Message
+        self.loading_label = ttk.Label(self.loading_window, text=message, wraplength=400, justify=tk.CENTER)
+        self.loading_label.pack(pady=(20, 10))
+        
+        # Determinate Progress Bar
+        self.loading_pb = ttk.Progressbar(self.loading_window, mode='determinate', length=380)
+        self.loading_pb.pack(fill=tk.X, padx=35, pady=5)
+        
+        # Time Remaining / Status Label
+        self.loading_time_label = ttk.Label(self.loading_window, text="Preparing...", font=('Segoe UI', 9), foreground="#666666")
+        self.loading_time_label.pack(pady=(0, 20))
+
+
+    def close_loading_dialog(self):
+        """Safely close the loading dialog"""
+        if hasattr(self, 'loading_window') and self.loading_window:
+            try:
+                self.loading_window.destroy()
+            except:
+                pass
+            self.loading_window = None
 
     def check_dependencies(self):
         """Check if required dependencies are installed and available"""
@@ -362,19 +440,15 @@ class BackgroundRemoverApp:
             missing_deps.append("numpy")
 
         if dependencies_ok:
-            try:
-                # Initialize model
-                self.init_model()
-                self.update_status("System ready. Models loaded successfully.", is_success=True)
-                self.btn_select.config(state=tk.NORMAL)
-                self.btn_install.pack_forget()  # Hide install button
-            except Exception as e:
-                self.update_status(f"Error initializing models: {str(e)}", is_error=True)
-                self.show_install_button()
+            # Initialize model in background (don't set ready state yet)
+            self.init_model()
         else:
             missing_str = ", ".join(missing_deps)
             self.update_status(f"Missing dependencies: {missing_str}. Installation required.", is_error=True)
             self.show_install_button()
+
+
+
 
     def remove_bg_with_model(self, input_data, session=None):
         """Remove background using the selected model"""
@@ -385,7 +459,7 @@ class BackgroundRemoverApp:
                 input_data,
                 session=self.session,
                 only_mask=False,
-                alpha_matting=True if self.model_name == "birefnet" else False
+                alpha_matting=True if self.model_name == "birefnet-general" else False
             )
         except Exception as e:
             self.update_status(f"Error in model processing: {str(e)}", is_error=True)
@@ -394,42 +468,60 @@ class BackgroundRemoverApp:
 
     def init_model(self):
         """Initialize the selected background removal model"""
+        target_model = self.model_var.get()
+        
+        # Check if model exists locally (rembg stores models in ~/.u2net)
+        user_home = os.path.expanduser("~")
+        model_path = os.path.join(user_home, ".u2net", f"{target_model}.onnx")
+        
+        # Only show the loading dialog if the file is MISSING
+        if not os.path.exists(model_path):
+            self.show_loading_dialog("Downloading Model", f"Downloading {target_model}...\n(This happens once)")
+        else:
+            # If exists, just update the text log and disable input briefly
+            self.update_status(f"Loading {target_model} into memory...", is_success=True)
+            self.btn_select.config(state=tk.DISABLED)
+            
+        # Start thread
+        threading.Thread(target=self._init_model_thread, args=(target_model,), daemon=True).start()
+        
+        # Start checking queue
+        self.check_queue()
+
+    def _init_model_thread(self, model_name):
+        """Background thread for model initialization with progress capture"""
+        # Save original streams
+        original_stderr = sys.stderr
+        original_stdout = sys.stdout
+        
         try:
-            # Import necessary modules from rembg
+            # Redirect BOTH streams to capture output
+            redirector = StdErrRedirector(self.queue)
+            sys.stderr = redirector
+            sys.stdout = redirector
+            
             from rembg.session_factory import new_session
+            
+            # This triggers download (progress goes to queue)
+            self.session = new_session(model_name)
+            
+            # Save the successful model name
+            self.model_name = model_name
+            
+            # Define remove_bg function
+            if "birefnet" in model_name:
+                self.remove_bg = self.remove_bg_with_birefnet
+            else:
+                self.remove_bg = self.remove_bg_with_model
 
-            # Handle the download_models with correct parameters
-            try:
-                from rembg.bg import download_models, MODELS
-                # Pass the required models parameter
-                download_models(MODELS)
-            except (ImportError, TypeError):
-                # Alternative approach if the above fails
-                try:
-                    # Try alternative import path
-                    from rembg import download_models
-                    # Try with all available models including BiRefNet and U2Net
-                    download_models([
-                        "u2net", "u2net_human_seg", "u2netp", "silueta",
-                        "isnet", "isnet-general-use", "sam", "birefnet_resnet50"
-                    ])
-                except Exception:
-                    # Skip download if it's not working - the model may already be downloaded
-                    self.update_status("Skipping model download - using existing models if available", is_success=True)
-
-            # Get the selected model name
-            self.model_name = self.model_var.get()
-
-            # Create a session with the selected model
-            self.session = new_session(self.model_name)
-
-            # Define remove_bg function that uses the selected model
-            self.remove_bg = self.remove_bg_with_model
-
-            self.update_status(f"Model '{self.model_name}' initialized successfully", is_success=True)
+            self.queue.put(("model_loaded", model_name))
+            
         except Exception as e:
-            self.update_status(f"Failed to initialize model: {str(e)}", is_error=True)
-            raise e
+            self.queue.put(("model_error", str(e)))
+        finally:
+            # ALWAYS restore streams
+            sys.stderr = original_stderr
+            sys.stdout = original_stdout
 
 
     def init_birefnet_model(self):
@@ -725,7 +817,8 @@ class BackgroundRemoverApp:
         self.start_time = datetime.now()
 
         # Update status
-        model_name_display = "BiRefNet" if self.model_name == "birefnet" else "U2Net"
+        model_name_display = "BiRefNet" if self.model_name == "birefnet-general" else "U2Net"
+
         self.update_status(
             f"Starting background removal with {model_name_display} for {len(self.file_paths)} images...",
             is_success=True)
@@ -802,13 +895,51 @@ class BackgroundRemoverApp:
             self.queue.put(("fatal_error", str(e)))
 
     def check_queue(self):
-        """Check for updates from the processing thread"""
+        """Check for updates from the processing threads"""
         try:
-            while True:
+            # Process up to 5 messages at a time to keep UI responsive
+            for _ in range(5):
                 message_type, message = self.queue.get_nowait()
 
                 if message_type == "status":
                     self.update_status(message)
+                
+                elif message_type == "download_progress":
+                    percent, time_left = message
+                    
+                    # Update progress bar
+                    if hasattr(self, 'loading_pb') and self.loading_pb.winfo_exists():
+                        self.loading_pb['value'] = percent
+                    
+                    # Update text labels
+                    if hasattr(self, 'loading_time_label') and self.loading_time_label.winfo_exists():
+                        if "Calculating" in time_left:
+                             self.loading_time_label['text'] = f"{percent}% Complete"
+                        else:
+                             self.loading_time_label['text'] = f"{percent}% Complete • ~{time_left} remaining"
+                    
+                    if hasattr(self, 'loading_label') and self.loading_label.winfo_exists():
+                         if "Downloading" not in self.loading_label['text']:
+                             self.loading_label['text'] = "Downloading Model Data..."
+
+                elif message_type == "model_loaded":
+                    # Close dialog if it's open
+                    self.close_loading_dialog()
+                    
+                    # Update status
+                    self.update_status(f"System ready. Model '{message}' loaded successfully.", is_success=True)
+                    
+                    # Re-enable buttons
+                    self.btn_select.config(state=tk.NORMAL)
+                    self.btn_install.pack_forget()
+
+                elif message_type == "model_error":
+                    self.close_loading_dialog()
+                    self.update_status(f"Error initializing model: {message}", is_error=True)
+                    self.show_install_button()
+                    # Revert radio button
+                    self.model_var.set(self.model_name)
+
                 elif message_type == "success":
                     self.update_status(message, is_success=True)
                 elif message_type == "error":
@@ -831,7 +962,7 @@ class BackgroundRemoverApp:
 
                     self.update_status(f"All tasks completed in {time_str}!", is_success=True)
                     result = messagebox.askquestion("Success",
-                                                    f"All processing completed with BiRefNet.\nOutput saved to: {self.output_dir}\n\nWould you like to open the output folder?")
+                                                    f"All processing completed.\nOutput saved to: {self.output_dir}\n\nWould you like to open the output folder?")
                     self.finish_processing()
 
                     if result == "yes":
@@ -839,19 +970,18 @@ class BackgroundRemoverApp:
                 elif message_type == "install_success":
                     self.update_status("Dependencies installed successfully!", is_success=True)
                     self.btn_install.config(text="Install Dependencies")
-                    self.check_dependencies()  # Re-check dependencies
+                    self.check_dependencies() 
                 elif message_type == "install_error":
                     self.update_status(f"Installation failed: {message}", is_error=True)
                     self.btn_install.config(state=tk.NORMAL, text="Install Dependencies")
-                    # Show manual installation instructions
-                    self.update_status("For manual installation, run these commands in terminal:", is_error=True)
-                    self.update_status("pip install torch numpy rembg onnxruntime", is_error=True)
 
                 self.queue.task_done()
 
         except queue.Empty:
-            if self.is_processing:
-                self.root.after(100, self.check_queue)
+            pass
+        
+        # ALWAYS check again after 100ms (This keeps the loop alive)
+        self.root.after(100, self.check_queue)
 
     def finish_processing(self):
         """Reset the UI after processing is complete"""
@@ -868,7 +998,7 @@ class BackgroundRemoverApp:
         self.time_label.config(text="")
 
         # Get model name for display
-        model_name_display = "BiRefNet" if self.model_name == "birefnet" else "U2Net"
+        model_name_display = "BiRefNet" if self.model_name == "birefnet-general" else "U2Net"
         self.update_status(f"Process completed with {model_name_display} model.")
 
 
